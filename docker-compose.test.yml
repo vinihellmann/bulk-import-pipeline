@@ -1,0 +1,40 @@
+# Integration test override: runs Jest inside the compose network against real MySQL,
+# Redis, MinIO and ElasticMQ. The test process hosts its own API and worker instances.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml run --build --rm test
+services:
+  test:
+    build: { context: ., target: test }
+    command: ['npm', 'run', 'test:integration']
+    environment:
+      NODE_ENV: test
+      LOG_LEVEL: error
+      API_KEY: integration-test-api-key
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: app
+      DB_PASSWORD: app
+      DB_NAME: bulk_import
+      REDIS_URL: redis://redis:6379
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET: imports
+      S3_ENDPOINT: http://minio:9000
+      # Inside the network the presigned URL must point at the service name.
+      S3_PUBLIC_ENDPOINT: http://minio:9000
+      S3_FORCE_PATH_STYLE: 'true'
+      SQS_QUEUE_URL: http://elasticmq:9324/000000000000/imports
+      SQS_ENDPOINT: http://elasticmq:9324
+      SQS_WAIT_TIME_SECONDS: 1
+      SQS_RETRY_DELAY_SECONDS: 1
+      IMPORT_BATCH_SIZE: 50
+      PROGRESS_EVERY_ROWS: 10
+      PROGRESS_EVERY_MS: 1
+      RATE_LIMIT_MAX: 1000
+      SHUTDOWN_GRACE_MS: 5000
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      minio-init: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      elasticmq: { condition: service_started }

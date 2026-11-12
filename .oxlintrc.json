@@ -1,0 +1,12 @@
+{
+  "plugins": ["typescript", "import", "jest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "no-console": "error"
+  },
+  "ignorePatterns": ["dist", "node_modules", "coverage"]
+}

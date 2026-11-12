@@ -1,0 +1,252 @@
+openapi: 3.1.0
+info:
+  title: Bulk Import API
+  version: 1.0.0
+  description: |
+    Asynchronous, streaming import of product catalogs from CSV or XLSX files.
+
+    Flow: create an import (receive a presigned upload URL), upload the file straight to
+    object storage, start the import, then follow progress over Socket.io or by polling.
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:3000
+security:
+  - ApiKey: []
+tags:
+  - name: Imports
+  - name: Health
+
+paths:
+  /v1/imports:
+    post:
+      tags: [Imports]
+      summary: Create an import and get a presigned upload URL
+      description: |
+        Idempotent on the `Idempotency-Key` header. Repeating the request with the same key
+        and payload returns the original import (200) with a fresh upload URL while the file
+        is still expected. Reusing a key with a different payload is rejected (409).
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateImportRequest' }
+      responses:
+        '201':
+          description: Import created
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateImportResponse' }
+        '200':
+          description: Existing import returned for a repeated Idempotency-Key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateImportResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /v1/imports/{id}/start:
+    post:
+      tags: [Imports]
+      summary: Queue the uploaded file for processing
+      description: |
+        Verifies the object exists (HeadObject) and enqueues a job. Idempotent: calling it
+        again after the import left AWAITING_UPLOAD returns the current state without
+        enqueueing another job.
+      parameters:
+        - $ref: '#/components/parameters/ImportId'
+      responses:
+        '202':
+          description: Import queued (or already past the queueing step)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import: { $ref: '#/components/schemas/Import' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409':
+          description: The file has not been uploaded yet
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /v1/imports/{id}:
+    get:
+      tags: [Imports]
+      summary: Get import status and counters
+      parameters:
+        - $ref: '#/components/parameters/ImportId'
+      responses:
+        '200':
+          description: Import
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import: { $ref: '#/components/schemas/Import' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/imports/{id}/errors:
+    get:
+      tags: [Imports]
+      summary: List row-level validation errors (cursor pagination)
+      description: At most 1000 errors are stored per import; `failedRows` keeps the full count.
+      parameters:
+        - $ref: '#/components/parameters/ImportId'
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        '200':
+          description: A page of errors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/RowError' }
+                  nextCursor: { type: [string, 'null'] }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /v1/imports/{id}/errors.csv:
+    get:
+      tags: [Imports]
+      summary: Download the error report as CSV (streamed)
+      parameters:
+        - $ref: '#/components/parameters/ImportId'
+      responses:
+        '200':
+          description: CSV with columns row_number, field, message
+          content:
+            text/csv:
+              schema: { type: string }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      security: []
+      responses:
+        '200': { description: Process is up }
+
+  /ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe (MySQL, Redis, S3)
+      security: []
+      responses:
+        '200': { description: All dependencies reachable }
+        '503': { description: At least one dependency unavailable }
+
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+  parameters:
+    ImportId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Problem:
+      description: Error (RFC 9457 problem details)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After: { schema: { type: integer } }
+        RateLimit-Limit: { schema: { type: integer } }
+        RateLimit-Remaining: { schema: { type: integer } }
+        RateLimit-Reset: { schema: { type: integer } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    CreateImportRequest:
+      type: object
+      required: [fileName, format]
+      properties:
+        fileName: { type: string, maxLength: 255, examples: [catalog.csv] }
+        format: { type: string, enum: [csv, xlsx] }
+
+    CreateImportResponse:
+      type: object
+      properties:
+        import: { $ref: '#/components/schemas/Import' }
+        upload:
+          type: [object, 'null']
+          description: Null once the import has been started.
+          properties:
+            method: { type: string, const: PUT }
+            url: { type: string, format: uri }
+            expiresAt: { type: string, format: date-time }
+
+    Import:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        fileName: { type: string }
+        format: { type: string, enum: [csv, xlsx] }
+        status:
+          type: string
+          enum: [AWAITING_UPLOAD, QUEUED, PROCESSING, COMPLETED, COMPLETED_WITH_ERRORS, FAILED]
+        totalRows: { type: integer }
+        processedRows: { type: integer }
+        failedRows: { type: integer }
+        errorMessage: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+
+    RowError:
+      type: object
+      properties:
+        id: { type: integer }
+        rowNumber: { type: integer, description: 1-based line in the source file (header is 1) }
+        field: { type: string }
+        message: { type: string }
+
+    Problem:
+      type: object
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        requestId: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              location: { type: string }
+              field: { type: string }
+              message: { type: string }

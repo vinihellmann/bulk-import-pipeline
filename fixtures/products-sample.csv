@@ -1,0 +1,16 @@
+sku,name,description,price,stock,category
+SKU-0001,Cordless Drill 18V,Two batteries included,199.90,25,tools
+SKU-0002,Impact Driver,,149.00,12,tools
+SKU-0003,Circular Saw 7-1/4in,"Laser guide, carbide blade",129.99,8,tools
+SKU-0004,LED Desk Lamp,Dimmable,39.90,140,home
+SKU-0005,Ergonomic Chair,,329.00,0,office
+SKU-0006,Standing Desk Frame,Dual motor,489.00,6,office
+SKU-0007,Bad Price Item,,0,10,home
+SKU-0008,Mechanical Keyboard,Hot-swappable switches,119.00,33,electronics
+SKU-0009,Wireless Mouse,,29.90,210,electronics
+SKU-0010,Negative Stock Item,,10.00,-3,home
+SKU-0011,USB-C Hub 7-in-1,,59.00,75,electronics
+SKU-0012,,Missing name,15.00,4,home
+SKU-0013,Noise Cancelling Headphones,,249.00,18,electronics
+SKU-0014,Monitor Arm,Gas spring,89.00,40,office
+SKU-0015,Cable Management Tray,,24.50,95,office

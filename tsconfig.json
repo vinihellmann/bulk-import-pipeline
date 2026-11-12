@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["ES2023"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "sourceMap": true,
+    "rootDir": ".",
+    "outDir": "dist",
+    "noEmit": true,
+    "types": ["node", "jest"]
+  },
+  "include": ["src/**/*", "__tests__/**/*", "scripts/**/*"]
+}

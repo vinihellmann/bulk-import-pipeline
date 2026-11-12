@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint, typecheck, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        id: install
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "::notice::No lockfile committed yet; resolving dependencies and generating one."
+            npm install --no-audit --no-fund
+          fi
+
+      # Published so the generated lockfile can be reviewed and committed.
+      - name: Upload lockfile
+        if: steps.install.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: package-lock.json
+
+      # The remaining steps run even if a previous one failed, so one run reports everything.
+      - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run lint
+
+      - name: Typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run typecheck
+
+      - name: Build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run build
+
+      - name: Unit tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run test:unit
+
+      - name: Format check
+        id: format
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          if ! npm run --silent format:check; then
+            npx prettier --write . > /dev/null
+            git diff > format.patch
+            echo "::error::Files are not formatted; apply the format-patch artifact or run npm run format."
+            exit 1
+          fi
+
+      - name: Upload format patch
+        if: ${{ failure() && steps.format.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: format-patch
+          path: format.patch
+
+  integration:
+    name: Integration tests (docker compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run integration suite inside the compose network
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml run --build --rm test
+
+      - name: Service logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml down -v --remove-orphans

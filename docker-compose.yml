@@ -1,0 +1,120 @@
+name: bulk-import
+
+x-app-env: &app-env
+  NODE_ENV: production
+  LOG_LEVEL: info
+  API_KEY: ${API_KEY:-local-dev-api-key-change-me}
+  CORS_ORIGINS: http://localhost:5173
+  DB_HOST: mysql
+  DB_PORT: 3306
+  DB_USER: app
+  DB_PASSWORD: app
+  DB_NAME: bulk_import
+  REDIS_URL: redis://redis:6379
+  AWS_REGION: us-east-1
+  # Local stand-ins accept any credentials; on AWS remove these and use an IAM role.
+  AWS_ACCESS_KEY_ID: minioadmin
+  AWS_SECRET_ACCESS_KEY: minioadmin
+  S3_BUCKET: imports
+  S3_ENDPOINT: http://minio:9000
+  S3_PUBLIC_ENDPOINT: http://localhost:9000
+  S3_FORCE_PATH_STYLE: 'true'
+  SQS_QUEUE_URL: http://elasticmq:9324/000000000000/imports
+  SQS_ENDPOINT: http://elasticmq:9324
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: bulk_import
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app
+    ports: ['3306:3306']
+    volumes: [mysql-data:/var/lib/mysql]
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -proot --silent']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports: ['6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # MinIO stopped publishing official images; pgsty/* are community builds of the same source.
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ['9000:9000', '9001:9001']
+    volumes: [minio-data:/data]
+
+  minio-init:
+    image: pgsty/mc:RELEASE.2026-10-18T00-00-00Z
+    depends_on: [minio]
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        until mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null 2>&1; do
+          echo 'waiting for minio...'; sleep 1;
+        done
+        mc mb --ignore-existing local/imports
+        mc ilm rule add --expire-days 7 local/imports >/dev/null 2>&1 || true
+        echo 'bucket ready'
+
+  elasticmq:
+    image: softwaremill/elasticmq-native:1.7.1
+    ports: ['9324:9324', '9325:9325']
+    volumes: ['./infra/elasticmq.conf:/opt/elasticmq.conf:ro']
+
+  migrate:
+    build: { context: ., target: runtime }
+    image: bulk-import-pipeline:local
+    command: ['node', 'dist/infra/db/migrate.js']
+    environment: *app-env
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  api:
+    build: { context: ., target: runtime }
+    image: bulk-import-pipeline:local
+    command: ['node', 'dist/server.js']
+    environment:
+      <<: *app-env
+      PORT: 3000
+    ports: ['3000:3000']
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      minio-init: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      elasticmq: { condition: service_started }
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/health']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    stop_grace_period: 70s
+
+  worker:
+    build: { context: ., target: runtime }
+    image: bulk-import-pipeline:local
+    command: ['node', 'dist/worker.js']
+    environment: *app-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      minio-init: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      elasticmq: { condition: service_started }
+    stop_grace_period: 100s
+
+volumes:
+  mysql-data:
+  minio-data:
