@@ -1,5 +1,6 @@
 import { loadConfig } from '../../config/env';
-import { createLogger, serializeError } from '../logger';
+import { serializeError } from '../../shared/logger';
+import { createLogger } from '../logger';
 import { runMigrations } from './migrator';
 import { createSequelize } from './sequelize';
 

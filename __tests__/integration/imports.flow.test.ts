@@ -5,6 +5,7 @@ import * as ExcelJS from 'exceljs';
 import type { Socket } from 'socket.io-client';
 import request from 'supertest';
 import {
+  apiKeyOf,
   connectClient,
   startStack,
   subscribe,
@@ -48,23 +49,27 @@ afterAll(async () => {
   await stack?.close();
 });
 
-const auth = (): Record<string, string> => ({ 'x-api-key': stack.config.apiKey });
+const auth = (): Record<string, string> => ({ 'x-api-key': apiKeyOf(stack) });
 
-async function createImport(key: string, format: 'csv' | 'xlsx' = 'csv') {
+async function createImport(
+  key: string,
+  format: 'csv' | 'xlsx' = 'csv',
+  fileSize: number = SAMPLE.length,
+) {
   return request(stack.baseUrl)
     .post('/v1/imports')
     .set(auth())
     .set('Idempotency-Key', key)
-    .send({ fileName: `catalog.${format}`, format });
+    .send({ fileName: `catalog.${format}`, format, fileSize });
 }
 
 /** Creates, uploads and starts an import, then waits for `import:finished` over Socket.io. */
 async function runImport(key: string, file: Buffer, format: 'csv' | 'xlsx' = 'csv') {
-  const created = await createImport(key, format);
+  const created = await createImport(key, format, file.length);
   expect(created.status).toBe(201);
   const id: string = created.body.import.id;
 
-  await uploadTo(created.body.upload.url, file);
+  await uploadTo(created.body.upload.url, file, created.body.upload.headers);
   await subscribe(socket, id);
   const finished = waitForEvent<ProgressEvent>(socket, 'import:finished');
 
@@ -117,7 +122,10 @@ describe('full import flow', () => {
     expect(first.status).toBe(201);
     expect(first.headers.location).toBe(`/v1/imports/${first.body.import.id}`);
     expect(first.body.import.status).toBe('AWAITING_UPLOAD');
-    expect(first.body.upload).toMatchObject({ method: 'PUT' });
+    expect(first.body.upload).toMatchObject({
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/csv' },
+    });
     importId = first.body.import.id;
 
     const replay = await createImport('flow-key-1');
@@ -130,13 +138,13 @@ describe('full import flow', () => {
     const missingKey = await request(stack.baseUrl)
       .post('/v1/imports')
       .set(auth())
-      .send({ fileName: 'a.csv', format: 'csv' });
+      .send({ fileName: 'a.csv', format: 'csv', fileSize: 10 });
     expect(missingKey.status).toBe(400);
 
     const early = await request(stack.baseUrl).post(`/v1/imports/${importId}/start`).set(auth());
     expect(early.status).toBe(409);
 
-    await uploadTo(first.body.upload.url, SAMPLE);
+    await uploadTo(first.body.upload.url, SAMPLE, first.body.upload.headers);
   });
 
   it('processes the file, streams progress and reports row errors', async () => {

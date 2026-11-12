@@ -1,5 +1,5 @@
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
-import type { JobQueue } from '../modules/imports/types';
+import type { JobQueue } from '../modules/imports/domain/ports';
 
 export interface SqsSettings {
   region: string;

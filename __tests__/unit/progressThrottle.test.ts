@@ -1,4 +1,4 @@
-import { createProgressThrottle } from '../../src/modules/imports/progressThrottle';
+import { createProgressThrottle } from '../../src/modules/imports/application/progressThrottle';
 
 describe('createProgressThrottle', () => {
   it('emits only when both the row and the time thresholds are crossed', () => {

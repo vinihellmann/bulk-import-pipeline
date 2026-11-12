@@ -1,15 +1,20 @@
 import type { RequestHandler } from 'express';
+import type { ApiKeyAuthenticator } from '../../shared/auth/apiKeys';
 import { UnauthorizedError } from '../../shared/errors';
-import { safeEqual } from '../../shared/safeEqual';
 
-/** Machine-to-machine authentication with a static key compared in constant time. */
-export function apiKeyAuth(expectedKey: string): RequestHandler {
+/**
+ * Machine-to-machine authentication. Resolves the `x-api-key` header to a tenant
+ * `Principal` (constant-time, hashed comparison) and tags the request logger with it.
+ */
+export function apiKeyAuth(authenticator: ApiKeyAuthenticator): RequestHandler {
   return (req, _res, next) => {
-    const provided = req.get('x-api-key');
-    if (provided !== undefined && safeEqual(provided, expectedKey)) {
-      next();
+    const principal = authenticator.authenticate(req.get('x-api-key'));
+    if (!principal) {
+      next(new UnauthorizedError('Missing or invalid API key'));
       return;
     }
-    next(new UnauthorizedError('Missing or invalid API key'));
+    req.principal = principal;
+    req.log = req.log.child({ clientId: principal.clientId, keyId: principal.keyId });
+    next();
   };
 }

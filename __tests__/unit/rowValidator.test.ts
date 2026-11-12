@@ -1,4 +1,4 @@
-import { validateRow } from '../../src/modules/imports/rowValidator';
+import { validateRow } from '../../src/modules/imports/domain/rowValidator';
 
 const valid = {
   sku: ' SKU-001 ',

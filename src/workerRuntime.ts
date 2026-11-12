@@ -2,11 +2,9 @@ import { Consumer } from 'sqs-consumer';
 import type { AppConfig } from './config/env';
 import type { Infrastructure } from './infra/container';
 import { createRedisLockManager } from './infra/lock';
-import { serializeError, type Logger } from './infra/logger';
+import { serializeError, type Logger } from './shared/logger';
 import { createProgressPublisher } from './infra/realtime';
-import { ShutdownError } from './modules/imports/errors';
-import { createImportProcessor } from './modules/imports/importProcessor';
-import { createJobHandler } from './modules/imports/jobHandler';
+import { createImportProcessor, createJobHandler, ShutdownError } from './modules/imports';
 
 export interface WorkerOptions {
   config: AppConfig;

@@ -1,11 +1,10 @@
 import type { Message } from '@aws-sdk/client-sqs';
 import { z } from 'zod';
-import type { Logger } from '../../infra/logger';
-import { serializeError } from '../../infra/logger';
-import { ShutdownError } from './errors';
+import { serializeError, type Logger } from '../../../shared/logger';
+import { LockLostError, ShutdownError, StaleRunError } from '../domain/errors';
 import type { ImportProcessor } from './importProcessor';
 
-const messageSchema = z.object({ importId: z.string().uuid() });
+const messageSchema = z.object({ importId: z.uuid() });
 
 export interface JobHandlerDeps {
   processor: Pick<ImportProcessor, 'process' | 'fail'>;
@@ -50,10 +49,17 @@ export function createJobHandler(deps: JobHandlerDeps): (message: Message) => Pr
       await deps.processor.process(importId, { correlationId, signal: deps.shutdownSignal });
     } catch (err) {
       log.error('import processing failed', serializeError(err));
-      if (!(err instanceof ShutdownError) && receiveCount >= deps.maxReceiveCount) {
-        const reason = err instanceof Error ? err.message : String(err);
+      // Shutdown, a lost lock and a fenced-out run all mean "someone else owns the import now":
+      // rethrow so the message is redelivered (and then skipped or continued), never fail it.
+      const ownedElsewhere =
+        err instanceof ShutdownError ||
+        err instanceof LockLostError ||
+        err instanceof StaleRunError;
+      if (!ownedElsewhere && receiveCount >= deps.maxReceiveCount) {
+        // The stored message is returned by the API: never include err.message (SQL, driver
+        // or network details). The full error is in the log above.
         await deps.processor
-          .fail(importId, `Processing failed after ${receiveCount} attempts: ${reason}`)
+          .fail(importId, `Processing failed after ${receiveCount} attempts`)
           .catch((e: unknown) => log.error('failed to mark import as FAILED', serializeError(e)));
       }
       throw err;

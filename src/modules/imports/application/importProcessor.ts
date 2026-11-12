@@ -1,23 +1,26 @@
 import type { Readable } from 'node:stream';
-import type { Logger } from '../../infra/logger';
-import { serializeError } from '../../infra/logger';
-import type { LockManager } from '../../infra/lock';
-import { BatchWriter } from './batchWriter';
-import { InvalidFileError, LockLostError, ShutdownError } from './errors';
-import { parseRows } from './parsers';
-import { createProgressThrottle } from './progressThrottle';
-import { validateRow } from './rowValidator';
+import { serializeError, type Logger } from '../../../shared/logger';
+import { InvalidFileError, LockLostError, ShutdownError } from '../domain/errors';
+import type {
+  ImportRepository,
+  LockManager,
+  ObjectStorage,
+  ProductRepository,
+  ProgressPublisher,
+} from '../domain/ports';
+import { validateRow } from '../domain/rowValidator';
+import { TERMINAL_STATUSES } from '../domain/status';
 import {
-  TERMINAL_STATUSES,
   type Counters,
-  type ImportRepository,
   type NewImportError,
-  type ObjectStorage,
-  type ProductRepository,
   type ProductRow,
   type ProgressPayload,
-  type ProgressPublisher,
-} from './types';
+} from '../domain/types';
+// Pragmatic exception to the layering rule: the processor depends on the streaming parsers directly.
+import { limitStreamBytes } from '../infrastructure/limitStreamBytes';
+import { parseRows } from '../infrastructure/parsers';
+import { BatchWriter } from './batchWriter';
+import { createProgressThrottle } from './progressThrottle';
 
 export interface ProcessorOptions {
   batchSize: number;
@@ -26,6 +29,10 @@ export interface ProcessorOptions {
   progressEveryMs: number;
   lockTtlMs: number;
   lockRenewMs: number;
+  /** Largest file the worker will read from storage, enforced on the byte stream. */
+  maxUploadBytes: number;
+  /** Largest number of data rows accepted in one file. */
+  maxRows: number;
 }
 
 export interface ProcessorDeps {
@@ -73,8 +80,10 @@ export function createImportProcessor(deps: ProcessorDeps) {
     }
   };
 
-  async function fail(importId: string, message: string): Promise<void> {
-    await imports.markFailed(importId, message);
+  async function fail(importId: string, message: string, runId?: string): Promise<void> {
+    // Never overwrites a final status, and with a runId never a run that took over.
+    const applied = await imports.markFailed(importId, message, runId);
+    if (!applied) return;
     const rec = await imports.findById(importId);
     await safePublish('finished', {
       importId,
@@ -86,7 +95,12 @@ export function createImportProcessor(deps: ProcessorDeps) {
     });
   }
 
-  async function run(importId: string, signal: AbortSignal, log: Logger): Promise<ProcessOutcome> {
+  async function run(
+    importId: string,
+    signal: AbortSignal,
+    log: Logger,
+    state: { runId: string | null },
+  ): Promise<ProcessOutcome> {
     const rec = await imports.findById(importId);
     if (!rec) {
       log.warn('import not found, dropping message');
@@ -101,7 +115,12 @@ export function createImportProcessor(deps: ProcessorDeps) {
       return 'skipped';
     }
 
-    await imports.markProcessing(importId);
+    const runId = await imports.markProcessing(importId);
+    if (runId === null) {
+      log.info('import cannot enter PROCESSING (finished meanwhile), skipping');
+      return 'skipped';
+    }
+    state.runId = runId;
     await safePublish('progress', {
       importId,
       status: 'PROCESSING',
@@ -112,7 +131,7 @@ export function createImportProcessor(deps: ProcessorDeps) {
 
     let stream: Readable;
     try {
-      stream = await storage.getStream(rec.s3Key);
+      stream = limitStreamBytes(await storage.getStream(rec.s3Key), options.maxUploadBytes);
     } catch (err) {
       if ((err as { name?: string }).name === 'NoSuchKey') {
         throw new InvalidFileError('Uploaded file not found in storage');
@@ -137,7 +156,7 @@ export function createImportProcessor(deps: ProcessorDeps) {
 
     const flushErrors = async (): Promise<void> => {
       if (errorBuffer.length === 0) return;
-      await imports.insertErrors(importId, errorBuffer.splice(0, errorBuffer.length));
+      await imports.insertErrors(importId, runId, errorBuffer.splice(0, errorBuffer.length));
     };
     // Rows still sitting in the writer buffer are not durable yet, so they are not "processed".
     const snapshot = (): Counters => ({
@@ -149,6 +168,9 @@ export function createImportProcessor(deps: ProcessorDeps) {
     for await (const row of parseRows(rec.format, stream)) {
       signal.throwIfAborted();
       totalRows += 1;
+      if (totalRows > options.maxRows) {
+        throw new InvalidFileError(`File exceeds the maximum of ${options.maxRows} rows`);
+      }
 
       const result = validateRow(row.values);
       if (result.success) {
@@ -168,17 +190,23 @@ export function createImportProcessor(deps: ProcessorDeps) {
 
       if (throttle.shouldEmit(totalRows)) {
         const counters = snapshot();
-        await imports.updateCounters(importId, counters);
+        await imports.updateCounters(importId, runId, counters);
         await safePublish('progress', { importId, status: 'PROCESSING', ...counters });
       }
     }
 
+    signal.throwIfAborted(); // lock lost or shutdown while the last rows were being read
+
+    // Product upserts are deliberately NOT fenced: they are idempotent upserts of the same file,
+    // so a stale worker writing them again is harmless. Only import state and errors are fenced.
     await writer.flush();
     await flushErrors();
 
+    signal.throwIfAborted();
+
     const finalCounters: Counters = { totalRows, processedRows: totalRows, failedRows };
     const status = failedRows > 0 ? 'COMPLETED_WITH_ERRORS' : 'COMPLETED';
-    await imports.finish(importId, status, finalCounters);
+    await imports.finish(importId, runId, status, finalCounters);
     await safePublish('finished', { importId, status, ...finalCounters });
 
     log.info('import finished', { status, ...finalCounters, storedErrors, droppedErrors });
@@ -209,14 +237,17 @@ export function createImportProcessor(deps: ProcessorDeps) {
         .catch((err: unknown) => log.warn('lock renewal failed', serializeError(err)));
     }, options.lockRenewMs);
 
+    const state: { runId: string | null } = { runId: null };
     try {
-      return await run(importId, abort.signal, log);
+      return await run(importId, abort.signal, log, state);
     } catch (err) {
       if (err instanceof InvalidFileError) {
         log.warn('import failed: invalid file', { reason: err.message });
-        await fail(importId, err.message);
+        await fail(importId, err.message, state.runId ?? undefined);
         return 'failed';
       }
+      // StaleRunError and LockLostError: another run owns the import now, so do not touch it.
+      // Rethrow; the redelivered message is a no-op or continues the work of the new run.
       throw err;
     } finally {
       clearInterval(heartbeat);

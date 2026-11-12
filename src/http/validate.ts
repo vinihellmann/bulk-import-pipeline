@@ -4,7 +4,7 @@ import { ValidationError } from '../shared/errors';
 export type InputLocation = 'body' | 'query' | 'path' | 'header';
 
 /** Parses untrusted input with a zod schema and maps failures to a 400 problem response. */
-export function parseInput<S extends z.ZodTypeAny>(
+export function parseInput<S extends z.ZodType>(
   schema: S,
   data: unknown,
   location: InputLocation,

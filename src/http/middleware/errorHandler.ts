@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
-import { serializeError, type Logger } from '../../infra/logger';
+import { serializeError, type Logger } from '../../shared/logger';
 import { AppError, NotFoundError } from '../../shared/errors';
 
 /** RFC 9457 problem details. */

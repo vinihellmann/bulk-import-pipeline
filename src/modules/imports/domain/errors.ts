@@ -29,3 +29,15 @@ export class DuplicateIdempotencyKeyError extends Error {
     this.name = 'DuplicateIdempotencyKeyError';
   }
 }
+
+/**
+ * A write made on behalf of a processing run was rejected because the run no longer owns the
+ * import (another worker took over, or the import already reached a final status). The worker
+ * must stop without touching the import.
+ */
+export class StaleRunError extends Error {
+  constructor(importId: string) {
+    super(`Run for import ${importId} is no longer current`);
+    this.name = 'StaleRunError';
+  }
+}

@@ -58,9 +58,15 @@ async function resetData(infra: Infrastructure, config: AppConfig): Promise<void
   await infra.sqs.send(new PurgeQueueCommand({ QueueUrl: config.sqs.queueUrl }));
 }
 
+/** The plaintext key the integration environment authenticates with (config keeps only hashes). */
+export function apiKeyOf(stack: Stack): string {
+  if (!stack.config.apiKey) throw new Error('API_KEY must be set for integration tests');
+  return stack.config.apiKey;
+}
+
 export async function connectClient(stack: Stack): Promise<Socket> {
   const socket = connectSocket(stack.baseUrl, {
-    auth: { apiKey: stack.config.apiKey },
+    auth: { apiKey: apiKeyOf(stack) },
     transports: ['websocket'],
     reconnection: false,
   });
@@ -112,7 +118,12 @@ export async function waitForQueueToDrain(stack: Stack, timeoutMs = 20_000): Pro
 }
 
 /** PUTs a file to a presigned URL exactly like a browser or `curl -T` would. */
-export async function uploadTo(url: string, body: Buffer): Promise<void> {
-  const res = await fetch(url, { method: 'PUT', body });
+export async function uploadTo(
+  url: string,
+  body: Buffer,
+  headers: Record<string, string> = {},
+): Promise<void> {
+  // Headers must be sent verbatim: they are part of the signature (Content-Type).
+  const res = await fetch(url, { method: 'PUT', body, headers });
   if (!res.ok) throw new Error(`upload failed: ${res.status} ${await res.text()}`);
 }

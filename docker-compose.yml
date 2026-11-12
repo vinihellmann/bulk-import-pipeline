@@ -3,7 +3,10 @@ name: bulk-import
 x-app-env: &app-env
   NODE_ENV: production
   LOG_LEVEL: info
-  API_KEY: ${API_KEY:-local-dev-api-key-change-me}
+  # Keys are stored hashed (sha256). The plaintext to send in `x-api-key` for the default value
+  # below is `local-dev-api-key-change-me`. Generate real ones with `npm run generate:api-key`.
+  API_KEYS: ${API_KEYS:-default:dbfa6e71cf9164ee80524dd80b61c77d644fe0d937258cbb6c280a1ce36700fe}
+  TRUST_PROXY: 'false'
   CORS_ORIGINS: http://localhost:5173
   DB_HOST: mysql
   DB_PORT: 3306
@@ -79,6 +82,7 @@ services:
     build: { context: ., target: runtime }
     image: bulk-import-pipeline:local
     command: ['node', 'dist/infra/db/migrate.js']
+    healthcheck: { disable: true }
     environment: *app-env
     depends_on:
       mysql: { condition: service_healthy }
@@ -107,6 +111,7 @@ services:
     build: { context: ., target: runtime }
     image: bulk-import-pipeline:local
     command: ['node', 'dist/worker.js']
+    healthcheck: { disable: true }
     environment: *app-env
     depends_on:
       migrate: { condition: service_completed_successfully }

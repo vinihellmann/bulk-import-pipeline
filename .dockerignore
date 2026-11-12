@@ -1,8 +1,22 @@
+# VCS / CI / editors
+.git
+.github
+.vscode
+.idea
+
+# Build output and local artifacts
 node_modules
 dist
 coverage
-.git
-.github
-.env
 *.log
+npm-debug.log*
+
+# Secrets and local config (never bake into an image)
+.env
+.env.*
+
+# Not needed inside the image (compose files / local infra are used from the host)
+docker-compose*.yml
+infra
+*.md
 fixtures/large*.csv

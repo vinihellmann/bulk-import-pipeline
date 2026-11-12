@@ -23,9 +23,15 @@ paths:
       tags: [Imports]
       summary: Create an import and get a presigned upload URL
       description: |
-        Idempotent on the `Idempotency-Key` header. Repeating the request with the same key
-        and payload returns the original import (200) with a fresh upload URL while the file
-        is still expected. Reusing a key with a different payload is rejected (409).
+        Idempotent on the `Idempotency-Key` header, scoped to the authenticated client.
+        Repeating the request with the same key and payload (`fileName`, `format` and `fileSize`)
+        returns the original import (200) with a fresh upload URL while the file is still
+        expected. Reusing a key with a different payload is rejected (409).
+
+        The upload URL is signed for the declared `fileSize` and the format's `Content-Type`:
+        the PUT must send exactly the returned `upload.headers` and a body of exactly `fileSize`
+        bytes, otherwise object storage rejects it. `fileSize` is limited by the server
+        (default 50 MiB); larger values are rejected with 400.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -59,9 +65,13 @@ paths:
       tags: [Imports]
       summary: Queue the uploaded file for processing
       description: |
-        Verifies the object exists (HeadObject) and enqueues a job. Idempotent: calling it
-        again after the import left AWAITING_UPLOAD returns the current state without
-        enqueueing another job.
+        Verifies with HeadObject that the object exists and that its size equals the declared
+        `fileSize` (and is within the server limit), then enqueues a job. Idempotent: calling it
+        again after the import left AWAITING_UPLOAD returns the current state without enqueueing
+        another job. If an import has been QUEUED for several minutes without progress (its job
+        message was lost), calling start again re-enqueues it once.
+
+        Imports of other clients are reported as 404, exactly like unknown ids.
       parameters:
         - $ref: '#/components/parameters/ImportId'
       responses:
@@ -75,7 +85,7 @@ paths:
                   import: { $ref: '#/components/schemas/Import' }
         '404': { $ref: '#/components/responses/Problem' }
         '409':
-          description: The file has not been uploaded yet
+          description: The file has not been uploaded yet, or its size differs from `fileSize`
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -84,6 +94,7 @@ paths:
     get:
       tags: [Imports]
       summary: Get import status and counters
+      description: Other clients' imports are reported as 404, never 403.
       parameters:
         - $ref: '#/components/parameters/ImportId'
       responses:
@@ -190,10 +201,23 @@ components:
   schemas:
     CreateImportRequest:
       type: object
-      required: [fileName, format]
+      required: [fileName, format, fileSize]
       properties:
-        fileName: { type: string, maxLength: 255, examples: [catalog.csv] }
+        fileName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: '^[^\u0000-\u001f\u007f/\\]+$'
+          description: No control characters and no path separators (forward slash or backslash).
+          examples: [catalog.csv]
         format: { type: string, enum: [csv, xlsx] }
+        fileSize:
+          type: integer
+          minimum: 1
+          description: |
+            Exact size of the file in bytes. The maximum is configured on the server
+            (MAX_UPLOAD_BYTES, default 52428800).
+          examples: [1048576]
 
     CreateImportResponse:
       type: object
@@ -205,6 +229,10 @@ components:
           properties:
             method: { type: string, const: PUT }
             url: { type: string, format: uri }
+            headers:
+              type: object
+              additionalProperties: { type: string }
+              description: Headers the uploader must send verbatim (they are signed).
             expiresAt: { type: string, format: date-time }
 
     Import:

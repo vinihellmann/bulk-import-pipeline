@@ -1,15 +1,16 @@
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { Router } from 'express';
-import { serializeError } from '../../infra/logger';
-import { toImportDto, type ImportService } from '../../modules/imports/importService';
+import { serializeError } from '../../../shared/logger';
+import { parseInput } from '../../../http/validate';
+import type { ImportService } from '../application/importService';
+import { toImportDto } from './dto';
 import {
   createImportBodySchema,
   idempotencyHeaderSchema,
   importIdParamsSchema,
   listErrorsQuerySchema,
-} from '../../modules/imports/schemas';
-import { parseInput } from '../validate';
+} from './schemas';
 
 export function importsRouter(service: ImportService): Router {
   const router = Router();
@@ -23,9 +24,11 @@ export function importsRouter(service: ImportService): Router {
     const body = parseInput(createImportBodySchema, req.body ?? {}, 'body');
 
     const result = await service.create({
+      clientId: req.principal.clientId,
       idempotencyKey: headers['idempotency-key'],
       fileName: body.fileName,
       format: body.format,
+      fileSize: body.fileSize,
     });
 
     res
@@ -33,33 +36,30 @@ export function importsRouter(service: ImportService): Router {
       .location(`/v1/imports/${result.import.id}`)
       .json({
         import: toImportDto(result.import),
-        upload:
-          result.uploadUrl !== null
-            ? { method: 'PUT', url: result.uploadUrl, expiresAt: result.expiresAt }
-            : null,
+        upload: result.upload,
       });
   });
 
   router.post('/:id/start', async (req, res) => {
     const { id } = parseInput(importIdParamsSchema, req.params, 'path');
-    const rec = await service.start(id, req.requestId);
+    const rec = await service.start(req.principal.clientId, id, req.requestId);
     res.status(202).json({ import: toImportDto(rec) });
   });
 
   router.get('/:id', async (req, res) => {
     const { id } = parseInput(importIdParamsSchema, req.params, 'path');
-    res.json({ import: toImportDto(await service.get(id)) });
+    res.json({ import: toImportDto(await service.get(req.principal.clientId, id)) });
   });
 
   router.get('/:id/errors', async (req, res) => {
     const { id } = parseInput(importIdParamsSchema, req.params, 'path');
     const query = parseInput(listErrorsQuerySchema, req.query, 'query');
-    res.json(await service.listErrors(id, query.cursor, query.limit));
+    res.json(await service.listErrors(req.principal.clientId, id, query.cursor, query.limit));
   });
 
   router.get('/:id/errors.csv', async (req, res) => {
     const { id } = parseInput(importIdParamsSchema, req.params, 'path');
-    const rec = await service.get(id); // 404 before any byte is written
+    const rec = await service.get(req.principal.clientId, id); // 404 before any byte is written
 
     res.status(200);
     res.attachment(`import-${rec.id}-errors.csv`);
@@ -67,7 +67,7 @@ export function importsRouter(service: ImportService): Router {
 
     // pipeline() honours backpressure and stops reading from MySQL if the client goes away.
     try {
-      await pipeline(Readable.from(service.streamErrorCsv(id)), res);
+      await pipeline(Readable.from(service.streamErrorCsv(req.principal.clientId, id)), res);
     } catch (err) {
       req.log.warn('error report stream aborted', serializeError(err));
     }

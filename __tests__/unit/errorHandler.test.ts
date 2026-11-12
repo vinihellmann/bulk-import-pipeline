@@ -2,7 +2,7 @@ import express from 'express';
 import request from 'supertest';
 import { errorHandler, notFoundHandler, toProblem } from '../../src/http/middleware/errorHandler';
 import { requestContext } from '../../src/http/middleware/requestContext';
-import { csvEscape } from '../../src/modules/imports/csvExport';
+import { csvEscape } from '../../src/modules/imports/infrastructure/csvExport';
 import {
   ConflictError,
   TooManyRequestsError,

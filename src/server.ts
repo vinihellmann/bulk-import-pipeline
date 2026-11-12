@@ -3,12 +3,14 @@ import type { RequestHandler } from 'express';
 import { createApiServer } from './api';
 import { loadConfig } from './config/env';
 import { createInfrastructure } from './infra/container';
-import { createLogger, serializeError } from './infra/logger';
+import { createLogger } from './infra/logger';
+import { serializeError } from './shared/logger';
 import { registerShutdown } from './shared/shutdown';
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel, 'api');
+  for (const warning of config.warnings) logger.warn('insecure configuration', { warning });
   const infra = createInfrastructure(config);
 
   const api = createApiServer({
