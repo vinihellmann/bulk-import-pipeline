@@ -1,6 +1,6 @@
 import type { Readable } from 'node:stream';
 import { parse } from 'csv-parse';
-import { InvalidFileError } from '../errors';
+import { InvalidFileError } from '../../domain/errors';
 import { assertRequiredColumns, normalizeHeader, type ParsedRow } from './types';
 
 function wrapCsvError(err: unknown): unknown {
@@ -29,6 +29,9 @@ export async function* parseCsv(input: Readable): AsyncGenerator<ParsedRow> {
     skip_empty_lines: true,
     relax_column_count: true,
     relax_quotes: true,
+    // Bounds memory: an unterminated quoted field would otherwise buffer the rest of the file.
+    // Exceeding it raises CSV_MAX_RECORD_SIZE, mapped to InvalidFileError by wrapCsvError.
+    max_record_size: 1_048_576,
   });
 
   // pipe() does not forward source errors, so do it explicitly.

@@ -11,17 +11,20 @@ import {
   IMPORT_STATUSES,
   type ImportFormat,
   type ImportStatus,
-} from '../../modules/imports/types';
+} from '../../modules/imports/domain/types';
 
 export class ImportModel extends Model<
   InferAttributes<ImportModel>,
   InferCreationAttributes<ImportModel>
 > {
   declare id: string;
+  declare clientId: string;
   declare idempotencyKey: string;
   declare fileName: string;
   declare format: ImportFormat;
+  declare fileSize: number | null;
   declare s3Key: string;
+  declare runId: CreationOptional<string | null>;
   declare status: CreationOptional<ImportStatus>;
   declare totalRows: CreationOptional<number>;
   declare processedRows: CreationOptional<number>;
@@ -71,10 +74,14 @@ export function initModels(sequelize: Sequelize): Models {
   ImportModel.init(
     {
       id: { type: DataTypes.UUID, primaryKey: true, allowNull: false },
+      clientId: { type: DataTypes.STRING(64), allowNull: false, defaultValue: 'default' },
       idempotencyKey: { type: DataTypes.STRING(255), allowNull: false },
       fileName: { type: DataTypes.STRING(255), allowNull: false },
       format: { type: DataTypes.ENUM(...IMPORT_FORMATS), allowNull: false },
+      // BIGINT comes back from mysql2 as a string; the repository converts it with Number.
+      fileSize: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
       s3Key: { type: DataTypes.STRING(512), allowNull: false },
+      runId: { type: DataTypes.UUID, allowNull: true },
       status: {
         type: DataTypes.ENUM(...IMPORT_STATUSES),
         allowNull: false,

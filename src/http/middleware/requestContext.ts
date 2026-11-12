@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import type { RequestHandler } from 'express';
-import type { Logger } from '../../infra/logger';
+import type { Principal } from '../../shared/auth/principal';
+import type { Logger } from '../../shared/logger';
 
 declare module 'express-serve-static-core' {
   interface Request {
     /** Correlation id: taken from `X-Request-Id` when it looks sane, generated otherwise. */
     requestId: string;
     log: Logger;
+    /** Set by the API key middleware on every authenticated (`/v1`) route. */
+    principal: Principal;
   }
 }
 

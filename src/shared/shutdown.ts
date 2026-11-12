@@ -1,4 +1,4 @@
-import type { Logger } from '../infra/logger';
+import type { Logger } from '../shared/logger';
 
 /**
  * Registers SIGTERM/SIGINT handlers that run `cleanup` once, then exit.

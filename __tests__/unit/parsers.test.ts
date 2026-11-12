@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import * as ExcelJS from 'exceljs';
-import { InvalidFileError } from '../../src/modules/imports/errors';
-import { parseCsv, parseXlsx } from '../../src/modules/imports/parsers';
+import { InvalidFileError } from '../../src/modules/imports/domain/errors';
+import { parseCsv, parseXlsx } from '../../src/modules/imports/infrastructure/parsers';
 import { collect } from './fakes';
 
 const csv = (text: string): Readable => Readable.from([Buffer.from(text, 'utf8')]);
@@ -61,6 +61,12 @@ describe('parseCsv', () => {
 
   it('maps malformed CSV to InvalidFileError', async () => {
     const text = 'sku,name,price,stock,category\n"A-1,Widget,1,1,tools\n';
+    await expect(collect(parseCsv(csv(text)))).rejects.toBeInstanceOf(InvalidFileError);
+  });
+
+  it('rejects a single record larger than 1 MiB instead of buffering the file', async () => {
+    const huge = 'x'.repeat(1_100_000);
+    const text = `sku,name,price,stock,category\nA-1,"${huge}",1,1,tools\n`;
     await expect(collect(parseCsv(csv(text)))).rejects.toBeInstanceOf(InvalidFileError);
   });
 

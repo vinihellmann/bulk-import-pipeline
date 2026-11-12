@@ -1,25 +1,28 @@
 import winston from 'winston';
+import type { Logger, LogMeta } from '../shared/logger';
 
-export type Logger = winston.Logger;
-
-export function createLogger(level: string, service: string, silent = false): Logger {
-  return winston.createLogger({
-    level,
-    silent,
-    defaultMeta: { service },
-    format: winston.format.combine(
-      winston.format.timestamp(),
-      winston.format.errors({ stack: true }),
-      winston.format.json(),
-    ),
-    transports: [new winston.transports.Console()],
-  });
+function adapt(base: winston.Logger): Logger {
+  return {
+    error: (message: string, meta?: LogMeta) => void base.error(message, meta),
+    warn: (message: string, meta?: LogMeta) => void base.warn(message, meta),
+    info: (message: string, meta?: LogMeta) => void base.info(message, meta),
+    debug: (message: string, meta?: LogMeta) => void base.debug(message, meta),
+    child: (meta: LogMeta) => adapt(base.child(meta)),
+  };
 }
 
-/** Converts an unknown thrown value into a plain, JSON-safe object for structured logs. */
-export function serializeError(err: unknown): Record<string, unknown> {
-  if (err instanceof Error) {
-    return { name: err.name, message: err.message, stack: err.stack };
-  }
-  return { message: String(err) };
+export function createLogger(level: string, service: string, silent = false): Logger {
+  return adapt(
+    winston.createLogger({
+      level,
+      silent,
+      defaultMeta: { service },
+      format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.errors({ stack: true }),
+        winston.format.json(),
+      ),
+      transports: [new winston.transports.Console()],
+    }),
+  );
 }

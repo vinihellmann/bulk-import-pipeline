@@ -4,9 +4,11 @@ import { Emitter } from '@socket.io/redis-emitter';
 import type Redis from 'ioredis';
 import { Server } from 'socket.io';
 import { z } from 'zod';
-import type { Logger } from './logger';
-import type { ProgressPayload, ProgressPublisher } from '../modules/imports/types';
-import { safeEqual } from '../shared/safeEqual';
+import { serializeError, type Logger } from '../shared/logger';
+import type { ProgressPublisher } from '../modules/imports/domain/ports';
+import type { ProgressPayload } from '../modules/imports/domain/types';
+import type { ApiKeyAuthenticator } from '../shared/auth/apiKeys';
+import type { Principal } from '../shared/auth/principal';
 
 export const importRoom = (importId: string): string => `import:${importId}`;
 
@@ -34,9 +36,18 @@ export function createProgressPublisher(redis: Redis): ProgressPublisher {
 export interface RealtimeOptions {
   pub: Redis;
   sub: Redis;
-  apiKey: string;
+  authenticator: ApiKeyAuthenticator;
+  /** Tenant check: may this principal watch this import? Unknown and foreign imports are both false. */
+  authorizeSubscription(principal: Principal, importId: string): Promise<boolean>;
+  maxSubscriptionsPerSocket: number;
   corsOrigins: string[];
   logger: Logger;
+}
+
+declare module 'socket.io' {
+  interface SocketData {
+    principal: Principal;
+  }
 }
 
 const importIdSchema = z.string().uuid();
@@ -48,13 +59,17 @@ export function attachRealtime(httpServer: http.Server, options: RealtimeOptions
   const io = new Server(httpServer, {
     cors: { origin: options.corsOrigins.length > 0 ? options.corsOrigins : false },
     adapter: createAdapter(options.pub, options.sub),
+    // Clients only ever send tiny subscribe/unsubscribe payloads (default is 1 MB).
+    maxHttpBufferSize: 16 * 1024,
   });
 
   io.use((socket, next) => {
     const auth = socket.handshake.auth as { apiKey?: unknown } | undefined;
     const header = socket.handshake.headers['x-api-key'];
     const provided = typeof auth?.apiKey === 'string' ? auth.apiKey : header;
-    if (typeof provided === 'string' && safeEqual(provided, options.apiKey)) {
+    const principal = options.authenticator.authenticate(provided);
+    if (principal) {
+      socket.data.principal = principal;
       next();
     } else {
       next(new Error('unauthorized'));
@@ -62,6 +77,8 @@ export function attachRealtime(httpServer: http.Server, options: RealtimeOptions
   });
 
   io.on('connection', (socket) => {
+    // Subscriptions being authorized right now; counted so concurrent requests cannot beat the cap.
+    const pending = new Set<string>();
     const extractId = (payload: unknown): string | undefined => {
       const raw =
         typeof payload === 'object' && payload !== null
@@ -77,9 +94,38 @@ export function attachRealtime(httpServer: http.Server, options: RealtimeOptions
         if (typeof ack === 'function') ack({ ok: false, error: 'invalid importId' });
         return;
       }
-      await socket.join(importRoom(id));
+      const room = importRoom(id);
+      const reply = (result: { ok: boolean; error?: string }): void => {
+        if (typeof ack === 'function') ack(result);
+      };
+      try {
+        if (!socket.rooms.has(room) && !pending.has(room)) {
+          const subscriptions =
+            [...socket.rooms].filter((r) => r.startsWith('import:')).length + pending.size;
+          if (subscriptions >= options.maxSubscriptionsPerSocket) {
+            reply({ ok: false, error: 'too many subscriptions' });
+            return;
+          }
+          pending.add(room);
+          const allowed = await options
+            .authorizeSubscription(socket.data.principal, id)
+            .finally(() => pending.delete(room));
+          if (!allowed) {
+            reply({ ok: false, error: 'not found' });
+            return;
+          }
+          await socket.join(room);
+        }
+      } catch (err) {
+        options.logger.warn('socket subscribe failed', {
+          socketId: socket.id,
+          ...serializeError(err),
+        });
+        reply({ ok: false, error: 'unavailable' });
+        return;
+      }
       options.logger.debug('socket subscribed', { socketId: socket.id, importId: id });
-      if (typeof ack === 'function') ack({ ok: true });
+      reply({ ok: true });
     });
 
     socket.on('unsubscribe', async (payload: unknown) => {

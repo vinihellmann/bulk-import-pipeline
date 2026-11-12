@@ -1,4 +1,4 @@
-import { InvalidFileError } from '../errors';
+import { InvalidFileError } from '../../domain/errors';
 
 export interface ParsedRow {
   /** 1-based row number in the source file; the header is row 1, so data starts at 2. */

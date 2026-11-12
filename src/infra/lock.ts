@@ -1,15 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type Redis from 'ioredis';
-
-export interface Lock {
-  /** Extends the TTL. Resolves false when the lock is no longer ours (expired or stolen). */
-  renew(): Promise<boolean>;
-  release(): Promise<void>;
-}
-
-export interface LockManager {
-  acquire(key: string, ttlMs: number): Promise<Lock | null>;
-}
+import type { LockManager } from '../modules/imports/domain/ports';
 
 // Compare-and-delete / compare-and-extend so we never touch a lock owned by someone else.
 const RELEASE_SCRIPT = `

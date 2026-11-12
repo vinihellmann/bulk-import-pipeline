@@ -1,5 +1,5 @@
 import type { AppConfig } from '../config/env';
-import { createImportRepository, createProductRepository } from '../modules/imports/repository';
+import { createImportRepository, createProductRepository } from '../modules/imports';
 import { initModels } from './db/models';
 import { createSequelize } from './db/sequelize';
 import { createRedis } from './redis';
@@ -13,7 +13,7 @@ import { createSqsClient } from './sqs';
 export function createInfrastructure(config: AppConfig) {
   const sequelize = createSequelize(config.db);
   const models = initModels(sequelize);
-  const redis = createRedis(config.redisUrl);
+  const redis = createRedis(config.redis.url, { tlsCa: config.redis.tlsCa });
   const storage = createObjectStorage({ ...config.s3, region: config.region });
   const sqs = createSqsClient({ region: config.region, endpoint: config.sqs.endpoint });
 

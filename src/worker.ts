@@ -1,12 +1,14 @@
 import { loadConfig } from './config/env';
 import { createInfrastructure } from './infra/container';
-import { createLogger, serializeError } from './infra/logger';
+import { createLogger } from './infra/logger';
+import { serializeError } from './shared/logger';
 import { registerShutdown } from './shared/shutdown';
 import { createWorker } from './workerRuntime';
 
 function main(): void {
   const config = loadConfig();
   const logger = createLogger(config.logLevel, 'worker');
+  for (const warning of config.warnings) logger.warn('insecure configuration', { warning });
   const infra = createInfrastructure(config);
   const worker = createWorker({ config, infra, logger });
 

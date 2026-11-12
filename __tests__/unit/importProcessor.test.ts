@@ -1,4 +1,9 @@
-import { createImportProcessor, lockKey } from '../../src/modules/imports/importProcessor';
+import {
+  createImportProcessor,
+  lockKey,
+  type ProcessorOptions,
+} from '../../src/modules/imports/application/importProcessor';
+import { StaleRunError } from '../../src/modules/imports/domain/errors';
 import {
   FakeLockManager,
   FakeStorage,
@@ -9,9 +14,13 @@ import {
 } from './fakes';
 
 const ID = '9d2b8c1a-3e4f-4a5b-9c6d-7e8f9a0b1c2d';
-const KEY = `imports/${ID}/source.csv`;
+const KEY = `imports/client-a/${ID}/source.csv`;
 
-async function setup(fileContents: string, status: 'QUEUED' | 'COMPLETED' = 'QUEUED') {
+async function setup(
+  fileContents: string,
+  status: 'QUEUED' | 'COMPLETED' = 'QUEUED',
+  overrides: Partial<ProcessorOptions> = {},
+) {
   const imports = new InMemoryImportRepository();
   const products = new RecordingProductRepository();
   const storage = new FakeStorage();
@@ -20,9 +29,11 @@ async function setup(fileContents: string, status: 'QUEUED' | 'COMPLETED' = 'QUE
 
   await imports.create({
     id: ID,
+    clientId: 'client-a',
     idempotencyKey: 'k',
     fileName: 'f.csv',
     format: 'csv',
+    fileSize: Buffer.byteLength(fileContents),
     s3Key: KEY,
   });
   const rec = imports.records.get(ID);
@@ -43,6 +54,9 @@ async function setup(fileContents: string, status: 'QUEUED' | 'COMPLETED' = 'QUE
       progressEveryMs: 0,
       lockTtlMs: 1000,
       lockRenewMs: 500,
+      maxUploadBytes: 1_000_000,
+      maxRows: 1000,
+      ...overrides,
     },
   });
   return { imports, products, storage, publisher, locks, processor };
@@ -136,5 +150,89 @@ describe('ImportProcessor', () => {
       'shutting down',
     );
     expect(locks.held.size).toBe(0);
+  });
+
+  it('fails the import when the file has more rows than allowed', async () => {
+    const { processor, imports, products } = await setup(FILE, 'QUEUED', { maxRows: 3 });
+
+    await expect(processor.process(ID)).resolves.toBe('failed');
+    const rec = await imports.findById(ID);
+    expect(rec).toMatchObject({
+      status: 'FAILED',
+      errorMessage: 'File exceeds the maximum of 3 rows',
+    });
+    expect(products.batches.flat().length).toBeLessThanOrEqual(2);
+  });
+
+  it('fails the import when the stored object exceeds the byte limit', async () => {
+    const { processor, imports, locks } = await setup(FILE, 'QUEUED', { maxUploadBytes: 40 });
+
+    await expect(processor.process(ID)).resolves.toBe('failed');
+    expect(await imports.findById(ID)).toMatchObject({
+      status: 'FAILED',
+      errorMessage: 'File exceeds the maximum size of 40 bytes',
+    });
+    expect(locks.held.size).toBe(0);
+  });
+
+  it('assigns a fresh run id and takes over a PROCESSING import on redelivery', async () => {
+    const { processor, imports } = await setup(FILE);
+    const rec = imports.records.get(ID);
+    if (rec) Object.assign(rec, { status: 'PROCESSING', runId: 'dead-worker-run' });
+
+    await expect(processor.process(ID)).resolves.toBe('completed');
+    const after = await imports.findById(ID);
+    expect(after?.status).toBe('COMPLETED_WITH_ERRORS');
+    expect(after?.runId).not.toBe('dead-worker-run');
+  });
+
+  describe('fencing', () => {
+    it('stops with StaleRunError when another run took over, without publishing or finishing', async () => {
+      const { processor, imports, publisher, locks } = await setup(FILE);
+      // The first realtime event happens right after markProcessing: another worker takes over.
+      jest.spyOn(publisher, 'progress').mockImplementationOnce(async () => {
+        imports.stealRun(ID);
+      });
+      const before = publisher.events.length;
+
+      await expect(processor.process(ID)).rejects.toBeInstanceOf(StaleRunError);
+
+      const rec = await imports.findById(ID);
+      expect(rec?.status).toBe('PROCESSING'); // not finished, not failed
+      expect(rec?.finishedAt).toBeNull();
+      expect(publisher.events.slice(before).filter((e) => e.kind === 'finished')).toHaveLength(0);
+      expect(locks.held.size).toBe(0);
+    });
+
+    it('does not let a fenced-out worker overwrite the final state of the new run', async () => {
+      const { processor, imports, publisher } = await setup(FILE);
+      jest.spyOn(publisher, 'progress').mockImplementationOnce(async () => {
+        imports.stealRun(ID);
+      });
+      await expect(processor.process(ID)).rejects.toBeInstanceOf(StaleRunError);
+
+      // The new run (simulated) completes; a late stale write from the old run is rejected.
+      const rec = imports.records.get(ID);
+      if (rec) Object.assign(rec, { status: 'COMPLETED', totalRows: 5 });
+      await expect(
+        imports.finish(ID, 'old-run', 'COMPLETED', {
+          totalRows: 0,
+          processedRows: 0,
+          failedRows: 0,
+        }),
+      ).rejects.toBeInstanceOf(StaleRunError);
+      expect(await imports.findById(ID)).toMatchObject({ status: 'COMPLETED', totalRows: 5 });
+    });
+
+    it('does not mark FAILED a run that lost ownership while hitting an invalid file', async () => {
+      const { processor, imports, publisher } = await setup('sku,name\nA,B\n');
+      jest.spyOn(publisher, 'progress').mockImplementationOnce(async () => {
+        imports.stealRun(ID);
+      });
+
+      await expect(processor.process(ID)).resolves.toBe('failed');
+      expect((await imports.findById(ID))?.status).toBe('PROCESSING');
+      expect(publisher.events.some((e) => e.kind === 'finished')).toBe(false);
+    });
   });
 });

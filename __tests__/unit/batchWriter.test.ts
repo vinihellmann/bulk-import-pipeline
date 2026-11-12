@@ -1,4 +1,4 @@
-import { BatchWriter } from '../../src/modules/imports/batchWriter';
+import { BatchWriter } from '../../src/modules/imports/application/batchWriter';
 
 describe('BatchWriter', () => {
   it('flushes full batches automatically and the remainder on demand', async () => {

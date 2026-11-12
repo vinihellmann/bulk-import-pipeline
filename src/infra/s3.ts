@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Readable } from 'node:stream';
-import type { ObjectStorage } from '../modules/imports/types';
+import type { ObjectStorage } from '../modules/imports/domain/ports';
 
 export interface S3Settings {
   bucket: string;
@@ -15,6 +15,8 @@ export interface S3Settings {
   endpoint?: string;
   publicEndpoint?: string;
   forcePathStyle: boolean;
+  /** Server-side encryption applied to uploads (signed into the presigned URL). */
+  sse?: { mode: 'AES256' | 'aws:kms'; kmsKeyId?: string };
 }
 
 export type DestroyableObjectStorage = ObjectStorage & {
@@ -49,16 +51,48 @@ export function createObjectStorage(settings: S3Settings): DestroyableObjectStor
   });
 
   return {
-    async presignPut(key, expiresInSeconds) {
-      return getSignedUrl(signer, new PutObjectCommand({ Bucket: settings.bucket, Key: key }), {
-        expiresIn: expiresInSeconds,
-      });
+    async presignPut(key, { expiresInSeconds, contentType, contentLength }) {
+      const headers: Record<string, string> = { 'Content-Type': contentType };
+      const sse = settings.sse;
+      if (sse) {
+        headers['x-amz-server-side-encryption'] = sse.mode;
+        if (sse.mode === 'aws:kms' && sse.kmsKeyId) {
+          headers['x-amz-server-side-encryption-aws-kms-key-id'] = sse.kmsKeyId;
+        }
+      }
+      const url = await getSignedUrl(
+        signer,
+        new PutObjectCommand({
+          Bucket: settings.bucket,
+          Key: key,
+          ContentType: contentType,
+          ContentLength: contentLength,
+          ...(sse
+            ? {
+                ServerSideEncryption: sse.mode,
+                ...(sse.mode === 'aws:kms' && sse.kmsKeyId ? { SSEKMSKeyId: sse.kmsKeyId } : {}),
+              }
+            : {}),
+        }),
+        {
+          expiresIn: expiresInSeconds,
+          // The presigner treats content-type as unsignable by default; sign it explicitly so
+          // the store rejects an upload with a different type (content-length is signed already).
+          signableHeaders: new Set(['content-type']),
+          // Keep the SSE headers as signed headers (the uploader must send them) instead of
+          // hoisting them into the query string, where a client could omit or change them.
+          unhoistableHeaders: new Set(
+            Object.keys(headers).filter((h) => h.startsWith('x-amz-server-side-encryption')),
+          ),
+        },
+      );
+      return { method: 'PUT' as const, url, headers };
     },
 
-    async exists(key) {
+    async stat(key) {
       try {
-        await client.send(new HeadObjectCommand({ Bucket: settings.bucket, Key: key }));
-        return true;
+        const out = await client.send(new HeadObjectCommand({ Bucket: settings.bucket, Key: key }));
+        return { size: out.ContentLength ?? 0, contentType: out.ContentType };
       } catch (err) {
         const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
         if (
@@ -66,7 +100,7 @@ export function createObjectStorage(settings: S3Settings): DestroyableObjectStor
           e.name === 'NoSuchKey' ||
           e.$metadata?.httpStatusCode === 404
         ) {
-          return false;
+          return null;
         }
         throw err;
       }

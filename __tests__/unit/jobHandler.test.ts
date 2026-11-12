@@ -1,6 +1,10 @@
 import type { Message } from '@aws-sdk/client-sqs';
-import { ShutdownError } from '../../src/modules/imports/errors';
-import { createJobHandler } from '../../src/modules/imports/jobHandler';
+import {
+  LockLostError,
+  ShutdownError,
+  StaleRunError,
+} from '../../src/modules/imports/domain/errors';
+import { createJobHandler } from '../../src/modules/imports/application/jobHandler';
 import { silentLogger } from './fakes';
 
 const IMPORT_ID = '0b7c3d4e-1f2a-4b5c-8d9e-0f1a2b3c4d5e';
@@ -58,10 +62,7 @@ describe('createJobHandler', () => {
       throw new Error('mysql gone away');
     });
     await expect(handler(message(3))).rejects.toThrow('mysql gone away');
-    expect(processor.fail).toHaveBeenCalledWith(
-      IMPORT_ID,
-      'Processing failed after 3 attempts: mysql gone away',
-    );
+    expect(processor.fail).toHaveBeenCalledWith(IMPORT_ID, 'Processing failed after 3 attempts');
   });
 
   it('does not mark FAILED when the worker is shutting down', async () => {
@@ -69,6 +70,28 @@ describe('createJobHandler', () => {
       throw new ShutdownError();
     });
     await expect(handler(message(3))).rejects.toBeInstanceOf(ShutdownError);
+    expect(processor.fail).not.toHaveBeenCalled();
+  });
+
+  it('does not leak the underlying error message into the stored failure reason', async () => {
+    const { processor, handler } = setup(async () => {
+      throw new Error("ER_ACCESS_DENIED: user 'app'@'10.0.0.5' denied");
+    });
+    await expect(handler(message(3))).rejects.toThrow('ER_ACCESS_DENIED');
+
+    const stored = (processor.fail.mock.calls[0] as unknown as [string, string])[1];
+    expect(stored).toBe('Processing failed after 3 attempts');
+    expect(stored).not.toContain('ER_ACCESS_DENIED');
+  });
+
+  it.each([
+    ['LockLostError', () => new LockLostError(IMPORT_ID)],
+    ['StaleRunError', () => new StaleRunError(IMPORT_ID)],
+  ])('rethrows %s without marking FAILED, even on the last receive', async (_name, make) => {
+    const { processor, handler } = setup(async () => {
+      throw make();
+    });
+    await expect(handler(message(3))).rejects.toBeInstanceOf(Error);
     expect(processor.fail).not.toHaveBeenCalled();
   });
 });

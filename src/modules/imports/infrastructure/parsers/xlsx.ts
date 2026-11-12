@@ -1,6 +1,6 @@
 import type { Readable } from 'node:stream';
 import * as ExcelJS from 'exceljs';
-import { InvalidFileError } from '../errors';
+import { InvalidFileError } from '../../domain/errors';
 import { assertRequiredColumns, normalizeHeader, type ParsedRow } from './types';
 
 interface SheetRow {
