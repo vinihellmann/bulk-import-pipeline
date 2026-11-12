@@ -15,6 +15,10 @@ environment variables only.
 AWS SDK v3 (S3, presigner, SQS), sqs-consumer, Socket.io 4 with the Redis adapter and emitter,
 zod, winston, csv-parse, ExcelJS, umzug, Jest + SWC + supertest, oxlint + prettier.
 
+![scripts/demo.sh: sample import with 3 rejected rows, then 100k rows streamed with live progress](docs/demo.gif)
+
+_Recorded with [`scripts/demo.sh`](scripts/demo.sh) against `docker compose up`._
+
 ## Contents
 
 - [Architecture](#architecture)
@@ -237,7 +241,13 @@ docker compose up -d --build
 curl -s localhost:3000/ready | jq
 ```
 
-Import the sample catalog (15 rows, 3 of them invalid):
+Run the whole walkthrough at once (sample file, then a generated 100k-row file):
+
+```bash
+./scripts/demo.sh                # DEMO_ROWS=200000 DEMO_PAUSE=0 to tweak
+```
+
+Or step by step. Import the sample catalog (15 rows, 3 of them invalid):
 
 ```bash
 API=http://localhost:3000
