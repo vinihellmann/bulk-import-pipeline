@@ -7,17 +7,12 @@ export interface RowIssue {
 }
 
 export type RowValidation =
-  | { success: true; data: ProductRow }
-  | { success: false; issues: RowIssue[] };
+  { success: true; data: ProductRow } | { success: false; issues: RowIssue[] };
 
 const MAX_INT = 2_147_483_647;
 
 const requiredText = (max: number) =>
-  z
-    .string()
-    .trim()
-    .min(1, 'is required')
-    .max(max, `must be at most ${max} characters`);
+  z.string().trim().min(1, 'is required').max(max, `must be at most ${max} characters`);
 
 const price = z.string().transform((raw, ctx) => {
   const v = raw.trim();

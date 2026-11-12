@@ -33,7 +33,14 @@ describe('parseCsv', () => {
       },
       {
         rowNumber: 3,
-        values: { sku: 'A-2', name: 'Gadget', price: '5', stock: '0', category: 'tools', description: '' },
+        values: {
+          sku: 'A-2',
+          name: 'Gadget',
+          price: '5',
+          stock: '0',
+          category: 'tools',
+          description: '',
+        },
       },
     ]);
   });

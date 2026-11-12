@@ -86,11 +86,7 @@ export function createImportProcessor(deps: ProcessorDeps) {
     });
   }
 
-  async function run(
-    importId: string,
-    signal: AbortSignal,
-    log: Logger,
-  ): Promise<ProcessOutcome> {
+  async function run(importId: string, signal: AbortSignal, log: Logger): Promise<ProcessOutcome> {
     const rec = await imports.findById(importId);
     if (!rec) {
       log.warn('import not found, dropping message');
@@ -225,7 +221,9 @@ export function createImportProcessor(deps: ProcessorDeps) {
     } finally {
       clearInterval(heartbeat);
       ctx.signal?.removeEventListener('abort', onExternalAbort);
-      await lock.release().catch((err: unknown) => log.warn('lock release failed', serializeError(err)));
+      await lock
+        .release()
+        .catch((err: unknown) => log.warn('lock release failed', serializeError(err)));
     }
   }
 

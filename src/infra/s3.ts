@@ -61,7 +61,11 @@ export function createObjectStorage(settings: S3Settings): DestroyableObjectStor
         return true;
       } catch (err) {
         const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
-        if (e.name === 'NotFound' || e.name === 'NoSuchKey' || e.$metadata?.httpStatusCode === 404) {
+        if (
+          e.name === 'NotFound' ||
+          e.name === 'NoSuchKey' ||
+          e.$metadata?.httpStatusCode === 404
+        ) {
           return false;
         }
         throw err;

@@ -202,11 +202,11 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm --no-de
 
 Then repeat the flow above with `fixtures/large-products.csv`.
 
-| URL                                  | What                                  |
-| ------------------------------------ | ------------------------------------- |
-| http://localhost:3000/docs           | Interactive API reference (Scalar)    |
-| http://localhost:3000/openapi.yaml   | OpenAPI 3.1 document                  |
-| http://localhost:9001                | MinIO console (minioadmin/minioadmin) |
+| URL                                | What                                  |
+| ---------------------------------- | ------------------------------------- |
+| http://localhost:3000/docs         | Interactive API reference (Scalar)    |
+| http://localhost:3000/openapi.yaml | OpenAPI 3.1 document                  |
+| http://localhost:9001              | MinIO console (minioadmin/minioadmin) |
 
 ## Real-time progress
 
@@ -227,25 +227,25 @@ uncommitted batch.
 
 All `/v1` routes require `x-api-key`. Full contract in [`openapi.yaml`](openapi.yaml).
 
-| Method | Path                           | Description                                          |
-| ------ | ------------------------------ | ---------------------------------------------------- |
-| POST   | `/v1/imports`                  | Create import, returns presigned PUT URL (15 min)    |
-| POST   | `/v1/imports/:id/start`        | Verify upload, enqueue job (idempotent)              |
-| GET    | `/v1/imports/:id`              | Status and counters                                  |
-| GET    | `/v1/imports/:id/errors`       | Row errors, cursor pagination (`cursor`, `limit`)    |
-| GET    | `/v1/imports/:id/errors.csv`   | Error report, streamed                               |
-| GET    | `/health`, `/ready`            | Liveness and readiness (MySQL, Redis, S3)            |
+| Method | Path                         | Description                                       |
+| ------ | ---------------------------- | ------------------------------------------------- |
+| POST   | `/v1/imports`                | Create import, returns presigned PUT URL (15 min) |
+| POST   | `/v1/imports/:id/start`      | Verify upload, enqueue job (idempotent)           |
+| GET    | `/v1/imports/:id`            | Status and counters                               |
+| GET    | `/v1/imports/:id/errors`     | Row errors, cursor pagination (`cursor`, `limit`) |
+| GET    | `/v1/imports/:id/errors.csv` | Error report, streamed                            |
+| GET    | `/health`, `/ready`          | Liveness and readiness (MySQL, Redis, S3)         |
 
 Expected columns (header names are case-insensitive, extra columns are ignored):
 
-| Column        | Rule                                        |
-| ------------- | ------------------------------------------- |
-| `sku`         | required, up to 64 chars, upsert key        |
-| `name`        | required, up to 255 chars                   |
-| `description` | optional                                    |
-| `price`       | required, decimal > 0, up to 2 decimals     |
-| `stock`       | required, integer >= 0                      |
-| `category`    | required, up to 100 chars                   |
+| Column        | Rule                                    |
+| ------------- | --------------------------------------- |
+| `sku`         | required, up to 64 chars, upsert key    |
+| `name`        | required, up to 255 chars               |
+| `description` | optional                                |
+| `price`       | required, decimal > 0, up to 2 decimals |
+| `stock`       | required, integer >= 0                  |
+| `category`    | required, up to 100 chars               |
 
 ## Running the tests
 
@@ -284,14 +284,14 @@ npm run dev:worker   # worker with tsx watch
 Every variable is validated with zod at startup; the process refuses to boot with an invalid
 configuration. See [`.env.example`](.env.example) for the documented list. Running on AWS:
 
-| Variable                | Local                    | AWS                          |
-| ----------------------- | ------------------------ | ---------------------------- |
-| `S3_ENDPOINT`           | `http://minio:9000`      | unset                        |
-| `S3_PUBLIC_ENDPOINT`    | `http://localhost:9000`  | unset                        |
-| `S3_FORCE_PATH_STYLE`   | `true`                   | `false`                      |
-| `SQS_ENDPOINT`          | `http://elasticmq:9324`  | unset                        |
-| `SQS_QUEUE_URL`         | ElasticMQ URL            | real queue URL               |
-| `AWS_ACCESS_KEY_ID` ... | `minioadmin`             | unset (IAM role)             |
+| Variable                | Local                   | AWS              |
+| ----------------------- | ----------------------- | ---------------- |
+| `S3_ENDPOINT`           | `http://minio:9000`     | unset            |
+| `S3_PUBLIC_ENDPOINT`    | `http://localhost:9000` | unset            |
+| `S3_FORCE_PATH_STYLE`   | `true`                  | `false`          |
+| `SQS_ENDPOINT`          | `http://elasticmq:9324` | unset            |
+| `SQS_QUEUE_URL`         | ElasticMQ URL           | real queue URL   |
+| `AWS_ACCESS_KEY_ID` ... | `minioadmin`            | unset (IAM role) |
 
 MinIO no longer publishes official container images, so Compose uses `pgsty/minio` and
 `pgsty/mc`, community builds of the same open source code, pinned to a release tag.

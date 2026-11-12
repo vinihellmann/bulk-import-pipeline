@@ -44,8 +44,7 @@ export function toProblem(err: unknown): Problem {
   if (err instanceof AppError) {
     return {
       ...problem(err.status, err.code, err.message),
-      ...(err.details !== undefined &&
-      !(Array.isArray(err.details) && err.details.length === 0)
+      ...(err.details !== undefined && !(Array.isArray(err.details) && err.details.length === 0)
         ? { errors: err.details }
         : {}),
     };

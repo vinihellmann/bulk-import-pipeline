@@ -1,8 +1,5 @@
 import type { AddressInfo } from 'node:net';
-import {
-  GetQueueAttributesCommand,
-  PurgeQueueCommand,
-} from '@aws-sdk/client-sqs';
+import { GetQueueAttributesCommand, PurgeQueueCommand } from '@aws-sdk/client-sqs';
 import { io as connectSocket, type Socket } from 'socket.io-client';
 import { createApiServer, type ApiServer } from '../../src/api';
 import { loadConfig, type AppConfig } from '../../src/config/env';

@@ -5,7 +5,10 @@ import { silentLogger } from './fakes';
 
 const IMPORT_ID = '0b7c3d4e-1f2a-4b5c-8d9e-0f1a2b3c4d5e';
 
-const message = (receiveCount: number, body = JSON.stringify({ importId: IMPORT_ID })): Message => ({
+const message = (
+  receiveCount: number,
+  body = JSON.stringify({ importId: IMPORT_ID }),
+): Message => ({
   MessageId: 'm-1',
   Body: body,
   Attributes: { ApproximateReceiveCount: String(receiveCount) },

@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -38,7 +38,7 @@ jobs:
       # Published so the generated lockfile can be reviewed and committed.
       - name: Upload lockfile
         if: steps.install.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: package-lock
           path: package-lock.json
@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload format patch
         if: ${{ failure() && steps.format.outcome == 'failure' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: format-patch
           path: format.patch
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Run integration suite inside the compose network
         run: docker compose -f docker-compose.yml -f docker-compose.test.yml run --build --rm test

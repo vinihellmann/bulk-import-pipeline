@@ -1,8 +1,5 @@
 import type { AppConfig } from '../config/env';
-import {
-  createImportRepository,
-  createProductRepository,
-} from '../modules/imports/repository';
+import { createImportRepository, createProductRepository } from '../modules/imports/repository';
 import { initModels } from './db/models';
 import { createSequelize } from './db/sequelize';
 import { createRedis } from './redis';

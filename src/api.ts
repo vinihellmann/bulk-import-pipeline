@@ -17,7 +17,12 @@ export interface ApiServerOptions {
 }
 
 /** Wires the HTTP API and the Socket.io gateway. Used by `server.ts` and by integration tests. */
-export function createApiServer({ config, infra, logger, configurePublicRoutes }: ApiServerOptions) {
+export function createApiServer({
+  config,
+  infra,
+  logger,
+  configurePublicRoutes,
+}: ApiServerOptions) {
   const service = createImportService({
     repo: infra.importRepository,
     storage: infra.storage,

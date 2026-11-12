@@ -81,7 +81,9 @@ const productCount = (): Promise<number> => stack.infra.models.ProductModel.coun
 
 describe('authentication and probes', () => {
   it('rejects requests without a valid API key', async () => {
-    const missing = await request(stack.baseUrl).get('/v1/imports/00000000-0000-0000-0000-000000000000');
+    const missing = await request(stack.baseUrl).get(
+      '/v1/imports/00000000-0000-0000-0000-000000000000',
+    );
     expect(missing.status).toBe(401);
     expect(missing.headers['content-type']).toContain('application/problem+json');
 
@@ -99,7 +101,9 @@ describe('authentication and probes', () => {
   });
 
   it('sends rate limit headers', async () => {
-    const res = await request(stack.baseUrl).get('/v1/imports/00000000-0000-0000-0000-000000000000').set(auth());
+    const res = await request(stack.baseUrl)
+      .get('/v1/imports/00000000-0000-0000-0000-000000000000')
+      .set(auth());
     expect(res.headers['ratelimit-limit']).toBeDefined();
     expect(res.headers['ratelimit-remaining']).toBeDefined();
   });
