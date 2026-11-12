@@ -12,11 +12,23 @@ updates:
       development-dependencies:
         dependency-type: development
         update-types: [minor, patch]
+    ignore:
+      # Node types must match the Node.js major the service runs on (Dockerfile, engines).
+      # Moving to a new Node major is a deliberate upgrade of runtime and types together.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
+      # TypeScript 7 is the native (Go) compiler and needs a planned migration.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Same rule as @types/node: the Node major is upgraded on purpose, not by a bot.
+      - dependency-name: node
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
