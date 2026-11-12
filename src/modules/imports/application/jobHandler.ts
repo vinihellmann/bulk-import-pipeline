@@ -4,7 +4,7 @@ import { serializeError, type Logger } from '../../../shared/logger';
 import { LockLostError, ShutdownError, StaleRunError } from '../domain/errors';
 import type { ImportProcessor } from './importProcessor';
 
-const messageSchema = z.object({ importId: z.string().uuid() });
+const messageSchema = z.object({ importId: z.uuid() });
 
 export interface JobHandlerDeps {
   processor: Pick<ImportProcessor, 'process' | 'fail'>;

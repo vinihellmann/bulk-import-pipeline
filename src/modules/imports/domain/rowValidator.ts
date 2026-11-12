@@ -17,7 +17,7 @@ const requiredText = (max: number) =>
 const price = z.string().transform((raw, ctx) => {
   const v = raw.trim();
   const fail = (message: string) => {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    ctx.addIssue({ code: 'custom', message });
     return z.NEVER;
   };
   if (v === '') return fail('is required');
@@ -32,7 +32,7 @@ const price = z.string().transform((raw, ctx) => {
 const stock = z.string().transform((raw, ctx) => {
   const v = raw.trim();
   const fail = (message: string) => {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    ctx.addIssue({ code: 'custom', message });
     return z.NEVER;
   };
   if (v === '') return fail('is required');

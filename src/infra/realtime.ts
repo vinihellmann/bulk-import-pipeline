@@ -50,7 +50,7 @@ declare module 'socket.io' {
   }
 }
 
-const importIdSchema = z.string().uuid();
+const importIdSchema = z.uuid();
 
 type Ack = (result: { ok: boolean; error?: string }) => void;
 

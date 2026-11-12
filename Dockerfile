@@ -36,7 +36,13 @@ LABEL org.opencontainers.image.title="bulk-import-pipeline" \
       org.opencontainers.image.licenses="MIT"
 ENV NODE_ENV=production
 # tini as PID 1: forwards signals and reaps zombies, also when compose overrides `command`.
-RUN apk add --no-cache tini
+# The runtime only executes `node dist/...`: drop the package managers bundled with the base
+# image (npm, npx, corepack, yarn). Their own dependency trees are where most image CVEs live,
+# and a shell-less attacker gains nothing from them either.
+RUN apk add --no-cache tini \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 WORKDIR /app
 # Files stay root-owned and read-only for the unprivileged user: the app writes nothing to disk.
 COPY --from=prod-deps /app/node_modules ./node_modules
