@@ -52,6 +52,7 @@ export class ProductModel extends Model<
   InferCreationAttributes<ProductModel>
 > {
   declare id: CreationOptional<number>;
+  declare clientId: string;
   declare sku: string;
   declare name: string;
   declare description: string | null;
@@ -113,6 +114,7 @@ export function initModels(sequelize: Sequelize): Models {
   ProductModel.init(
     {
       id: { type: DataTypes.BIGINT, autoIncrement: true, primaryKey: true },
+      clientId: { type: DataTypes.STRING(64), allowNull: false },
       sku: { type: DataTypes.STRING(64), allowNull: false },
       name: { type: DataTypes.STRING(255), allowNull: false },
       description: { type: DataTypes.TEXT, allowNull: true },

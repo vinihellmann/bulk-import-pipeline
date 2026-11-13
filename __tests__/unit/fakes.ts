@@ -167,7 +167,9 @@ export class InMemoryImportRepository implements ImportRepository {
 
 export class RecordingProductRepository implements ProductRepository {
   readonly batches: ProductRow[][] = [];
-  async upsertBatch(_importId: string, rows: ProductRow[]): Promise<void> {
+  readonly clientIds: string[] = [];
+  async upsertBatch(clientId: string, _importId: string, rows: ProductRow[]): Promise<void> {
+    this.clientIds.push(clientId);
     this.batches.push(rows);
   }
 }

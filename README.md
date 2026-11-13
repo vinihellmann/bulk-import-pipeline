@@ -149,7 +149,8 @@ sequenceDiagram
 - **At-least-once delivery made safe.** SQS can deliver a message twice. The worker takes a
   Redis lock (`SET NX PX`, compare-and-renew in Lua), skips finished imports, resets counters
   and stored errors when it (re)starts an import, and writes products with an upsert keyed on
-  SKU, so replaying a file never duplicates rows.
+  the client and SKU, so replaying a file never duplicates rows and two clients never overwrite
+  each other.
 - **Fencing token for every run.** A lock can expire under a paused or partitioned worker while
   another one takes over. Each `QUEUED -> PROCESSING` transition generates a `run_id`; counters,
   errors and the final status are written only `WHERE run_id = <mine> AND status = 'PROCESSING'`.
@@ -361,7 +362,7 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml run --build --rm
 The integration suite boots a real API and a real worker in the test process and covers the
 complete flow: idempotent creation, 409 before upload, presigned upload, Socket.io progress and
 completion events, error pagination, CSV report, redelivery of a finished job, re-import upserts
-by SKU, XLSX import and a file rejected for missing columns. Unit tests cover the state
+by SKU, per-client SKU isolation, XLSX import and a file rejected for missing columns. Unit tests cover the state
 machine, API key parsing, config guards, the sliding-window limiter and the byte limiter.
 
 CI (GitHub Actions) runs lint, typecheck, build, `npm audit`, unit tests and a formatting check
