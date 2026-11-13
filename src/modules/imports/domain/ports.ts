@@ -51,8 +51,8 @@ export interface ImportRepository {
 }
 
 export interface ProductRepository {
-  /** Upserts by SKU inside a single transaction. Safe to repeat. */
-  upsertBatch(importId: string, rows: ProductRow[]): Promise<void>;
+  /** Upserts by (clientId, SKU) inside a single transaction. Safe to repeat. */
+  upsertBatch(clientId: string, importId: string, rows: ProductRow[]): Promise<void>;
 }
 
 export interface PresignPutOptions {

@@ -2,6 +2,7 @@ import { SequelizeStorage, Umzug } from 'umzug';
 import type { QueryInterface, Sequelize } from 'sequelize';
 import * as createSchema from './migrations/20250101000000-create-schema';
 import * as tenancyAndFencing from './migrations/20251112000000-tenancy-and-fencing';
+import * as productsPerClient from './migrations/20261112000000-products-per-client';
 
 interface MigrationModule {
   name: string;
@@ -10,7 +11,7 @@ interface MigrationModule {
 }
 
 // Explicit registry instead of a glob: works identically under tsx, tsc output and jest.
-const migrations: MigrationModule[] = [createSchema, tenancyAndFencing];
+const migrations: MigrationModule[] = [createSchema, tenancyAndFencing, productsPerClient];
 
 export function createMigrator(sequelize: Sequelize): Umzug<QueryInterface> {
   return new Umzug<QueryInterface>({

@@ -78,6 +78,8 @@ describe('ImportProcessor', () => {
     await expect(processor.process(ID)).resolves.toBe('completed');
 
     expect(products.batches.map((b) => b.map((r) => r.sku))).toEqual([['A-1', 'A-3'], ['A-5']]);
+    // Products are written under the importing client, never a global namespace.
+    expect(products.clientIds).toEqual(['client-a', 'client-a']);
     const rec = await imports.findById(ID);
     expect(rec).toMatchObject({
       status: 'COMPLETED_WITH_ERRORS',

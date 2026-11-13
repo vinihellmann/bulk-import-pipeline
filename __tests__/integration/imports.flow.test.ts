@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { SendMessageCommand } from '@aws-sdk/client-sqs';
 import * as ExcelJS from 'exceljs';
 import type { Socket } from 'socket.io-client';
 import request from 'supertest';
+import { createProductRepository } from '../../src/modules/imports';
 import {
   apiKeyOf,
   connectClient,
@@ -252,6 +254,31 @@ describe('full import flow', () => {
     expect(Number(drill?.price)).toBe(179.9);
     expect(drill?.stock).toBe(30);
     expect(drill?.lastImportId).toBe(updated.id);
+  });
+
+  it('keeps the same SKU separate per client', async () => {
+    const repo = createProductRepository(stack.infra.models, stack.infra.sequelize);
+    const row = {
+      sku: 'TENANT-1',
+      name: 'A',
+      description: null,
+      price: 10,
+      stock: 1,
+      category: 'x',
+    };
+
+    await repo.upsertBatch('client-a', randomUUID(), [row]);
+    await repo.upsertBatch('client-b', randomUUID(), [{ ...row, name: 'B' }]);
+    await repo.upsertBatch('client-a', randomUUID(), [{ ...row, name: 'A2' }]);
+
+    const rows = await stack.infra.models.ProductModel.findAll({
+      where: { sku: 'TENANT-1' },
+      order: [['clientId', 'ASC']],
+    });
+    expect(rows.map((r) => [r.clientId, r.name])).toEqual([
+      ['client-a', 'A2'],
+      ['client-b', 'B'],
+    ]);
   });
 });
 

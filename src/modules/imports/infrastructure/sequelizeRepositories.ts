@@ -195,7 +195,7 @@ export function createProductRepository(models: Models, sequelize: Sequelize): P
   const { ProductModel } = models;
 
   return {
-    async upsertBatch(importId, rows) {
+    async upsertBatch(clientId, importId, rows) {
       if (rows.length === 0) return;
       // Stable sort by SKU: a consistent lock order across concurrent batches reduces
       // deadlocks, and stability keeps "last row wins" for duplicate SKUs in one file.
@@ -203,7 +203,7 @@ export function createProductRepository(models: Models, sequelize: Sequelize): P
 
       await sequelize.transaction(async (transaction) => {
         await ProductModel.bulkCreate(
-          sorted.map((r) => ({ ...r, lastImportId: importId })),
+          sorted.map((r) => ({ ...r, clientId, lastImportId: importId })),
           { updateOnDuplicate: [...UPSERT_COLUMNS], transaction },
         );
       });

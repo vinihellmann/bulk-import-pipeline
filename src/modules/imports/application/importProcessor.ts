@@ -146,7 +146,7 @@ export function createImportProcessor(deps: ProcessorDeps) {
     const errorBuffer: NewImportError[] = [];
 
     const writer = new BatchWriter<ProductRow>(
-      (batch) => products.upsertBatch(importId, batch),
+      (batch) => products.upsertBatch(rec.clientId, importId, batch),
       options.batchSize,
     );
     const throttle = createProgressThrottle({
